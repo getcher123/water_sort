@@ -1,0 +1,15 @@
+{
+  "name": "water-sort-godot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node scripts/build-web.mjs",
+    "test": "node scripts/test-godot.mjs",
+    "test:loader": "node --expose-gc scripts/test-web-loader.mjs",
+    "serve": "node scripts/serve-web.mjs"
+  }
+}

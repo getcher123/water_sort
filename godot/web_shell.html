@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#d7dffb">
+  <meta name="description" content="Jelly Sort — расслабляющая головоломка: переливайте цвета, собирайте колбы и пройдите три уровня.">
+  <title>Jelly Sort — Lumeriq</title>
+  <link rel="icon" href="./app-icon.svg" type="image/svg+xml">
+  <style>
+    *{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden}body{display:grid;place-items:center;background:radial-gradient(ellipse at 15% 10%,#eee8ff,transparent 52%),radial-gradient(ellipse at 90% 90%,#d7eff5,transparent 55%),#d7dffb;color:#66548e;font-family:ui-rounded,'Arial Rounded MT Bold',system-ui,sans-serif}button{font:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}#stage{position:relative;width:min(100vw,56.25dvh,720px);height:min(100dvh,177.7778vw,1280px);overflow:hidden}#canvas{display:block;width:100%;height:100%;outline:0;touch-action:none;visibility:hidden}#loader{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8%;text-align:center;background:linear-gradient(150deg,#eae7fd,#d8e5fc)}.logo{width:104px;height:104px;filter:drop-shadow(0 10px 12px #76619420);margin-bottom:22px}h1{font-size:clamp(38px,9vw,54px);line-height:1.05;letter-spacing:-2px;margin:0 0 17px;font-weight:900;color:#6b5598}p{font-size:clamp(15px,3.6vw,18px);line-height:1.55;margin:0;max-width:270px;color:#8a7caa}.start{margin-top:38px;border:3px solid #348e99;border-radius:25px;background:linear-gradient(#70dadd,#48c3c8);color:#fffaf3;min-width:220px;padding:17px 27px;font-size:25px;font-weight:800;box-shadow:0 6px 0 #348e99,0 15px 20px #70649d15;transition:transform .12s,box-shadow .12s}.start:active{transform:translateY(4px);box-shadow:0 2px 0 #348e99}.start:focus-visible{outline:4px solid #a78ad9;outline-offset:7px}.start[hidden]{display:none}.tiny{font-size:12px;letter-spacing:2px;margin-top:28px;font-weight:700;opacity:.65}.progress{margin-top:34px;width:220px;height:11px;background:#d6cfed;border-radius:10px;overflow:hidden}.progress[hidden]{display:none}.progress span{display:block;width:0;height:100%;background:linear-gradient(90deg,#aa80df,#65cccf);border-radius:10px;transition:width .15s}.load-text{font-size:14px;min-height:24px;margin-top:14px;max-width:310px}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}@media(prefers-reduced-motion:reduce){*{transition:none!important}}#loader[hidden]{display:none}
+  </style>
+  $GODOT_HEAD_INCLUDE
+</head>
+<body>
+  <main id="stage" aria-label="Jelly Sort">
+    <canvas id="canvas" width="720" height="1280" tabindex="0" role="application" aria-label="Игра Jelly Sort. Выберите колбу, затем другую. Клавиши 1–6 выбирают колбы, Z отменяет ход, R перезапускает, Escape ставит на паузу.">Для игры нужен браузер с WebGL 2.</canvas>
+    <section id="loader" aria-label="Запуск игры">
+      <img class="logo" src="./app-icon.svg" width="104" height="104" alt="Колба с цветными слоями">
+      <h1>Jelly Sort</h1>
+      <p>Соберите каждый цвет<br>в свою колбу</p>
+      <button id="start" class="start">Играть</button>
+      <div id="progress" class="progress" hidden><span id="bar"></span></div>
+      <p id="load-text" class="load-text" aria-live="polite"></p>
+      <div class="tiny">3 УРОВНЯ · БЕЗ СПЕШКИ</div>
+    </section>
+    <p id="game-status" class="sr-only" role="status" aria-live="polite"></p>
+  </main>
+  <script src="$GODOT_URL"></script>
+  <script>
+    'use strict';
+    const canvas = document.getElementById('canvas');
+    const loader = document.getElementById('loader');
+    const start = document.getElementById('start');
+    const progress = document.getElementById('progress');
+    const bar = document.getElementById('bar');
+    const statusText = document.getElementById('load-text');
+    const nativeFetch = window.fetch.bind(window);
+    const wasmUrl = new URL('./index.wasm', location.href).href;
+    let started = false;
+    let cancelled = false;
+    let shownProgress = 0;
+    let watchdog;
+    const networkController = new AbortController();
+    window.jellyStatus = text => { document.getElementById('game-status').textContent = String(text); };
+    function progressTo(fraction) { shownProgress = Math.max(shownProgress, Math.min(.97, fraction)); bar.style.width = `${shownProgress * 100}%`; }
+    function fail(error) {
+      if (cancelled) return;
+      cancelled = true;
+      clearTimeout(watchdog);
+      networkController.abort();
+      window.fetch = nativeFetch;
+      console.error('Jelly Sort could not start:', error);
+      statusText.textContent = 'Не удалось загрузить игру. Проверьте интернет и попробуйте ещё раз.';
+      progress.hidden = true;
+      start.textContent = 'Обновить';
+      start.hidden = false;
+      start.onclick = () => location.reload();
+    }
+    async function verify(buffer, expectedBytes, expectedHash) {
+      if (buffer.byteLength !== expectedBytes) throw new Error('Runtime size mismatch');
+      if (globalThis.crypto?.subtle && expectedHash) {
+        const digest = await crypto.subtle.digest('SHA-256', buffer);
+        const hash = Array.from(new Uint8Array(digest), b => b.toString(16).padStart(2, '0')).join('');
+        if (hash !== expectedHash) throw new Error('Runtime hash mismatch');
+      }
+    }
+    async function fetchBytes(file, expectedBytes, expectedHash, weightStart, weightSpan) {
+      const response = await nativeFetch(new URL(file, location.href), {signal:networkController.signal});
+      if (!response.ok) throw new Error(`Runtime download failed: ${response.status}`);
+      let buffer;
+      if (response.body) {
+        const reader = response.body.getReader();
+        const pieces = []; let received = 0;
+        for (;;) {
+          const result = await reader.read();
+          if (result.done) break;
+          pieces.push(result.value); received += result.value.byteLength;
+          if (received > expectedBytes) { await reader.cancel(); throw new Error('Runtime exceeds expected size'); }
+          progressTo(weightStart + weightSpan * received / expectedBytes);
+        }
+        buffer = await new Blob(pieces).arrayBuffer();
+      } else buffer = await response.arrayBuffer();
+      await verify(buffer, expectedBytes, expectedHash);
+      return buffer;
+    }
+    let wasmPromise;
+    async function loadWasm() {
+      const response = await nativeFetch('./runtime-manifest.json', {cache:'no-cache',signal:networkController.signal});
+      if (!response.ok) throw new Error('Missing runtime manifest');
+      const manifest = await response.json();
+      let bytes;
+      if ('DecompressionStream' in window) {
+        const compressed = await fetchBytes(manifest.gzip.file, manifest.gzip.bytes, manifest.gzip.sha256, .02, .70);
+        const uncompressed = new Blob([compressed]).stream().pipeThrough(new DecompressionStream('gzip'));
+        bytes = await new Response(uncompressed).arrayBuffer();
+      } else {
+        const parts = [];
+        for (let i=0;i<manifest.parts.length;i++) {
+          const part = manifest.parts[i];
+          parts.push(await fetchBytes(part.file, part.bytes, part.sha256, .02 + .70 * i / manifest.parts.length, .70 / manifest.parts.length));
+        }
+        bytes = await new Blob(parts).arrayBuffer();
+      }
+      await verify(bytes, manifest.bytes, manifest.sha256);
+      progressTo(.76);
+      statusText.textContent = 'Подготавливаем колбы…';
+      return bytes;
+    }
+    window.fetch = async function(input, init) {
+      const url = new URL(typeof input === 'string' || input instanceof URL ? input : input.url, location.href);
+      const method = (init?.method || (typeof input === 'object' ? input.method : '') || 'GET').toUpperCase();
+      if (url.href !== wasmUrl || method !== 'GET') return nativeFetch(input, init);
+      try {
+        if (!wasmPromise) wasmPromise = loadWasm();
+        const bytes = await wasmPromise;
+        return new Response(bytes, {status:200,headers:{'Content-Type':'application/wasm','Content-Length':String(bytes.byteLength)}});
+      } catch(error) { fail(error); throw error; }
+    };
+    async function play() {
+      if (started) return;
+      started = true;
+      if (typeof Engine === 'undefined') { fail(new Error('Engine script did not load')); return; }
+      if (typeof WebAssembly === 'undefined' || !Engine.isWebGLAvailable(2)) {
+        statusText.textContent = 'Этот браузер не предоставляет WebGL 2. Откройте игру в актуальном Chrome, Edge, Firefox или Safari с поддержкой WebGL 2.';
+        start.hidden = true;
+        window.fetch = nativeFetch;
+        return;
+      }
+      start.hidden = true; progress.hidden = false;
+      statusText.textContent = 'Загружаем игру…';
+      watchdog = setTimeout(() => fail(new Error('Runtime startup timeout')), 120000);
+      try {
+        const config = $GODOT_CONFIG;
+        config.canvas = canvas;
+        config.canvasResizePolicy = 0;
+        config.focusCanvas = true;
+        config.onProgress = (current,total) => { if(total>0) progressTo(.76 + .17 * current/total); };
+        const engine = new Engine(config);
+        await engine.startGame();
+        if (cancelled) return;
+        clearTimeout(watchdog);
+        bar.style.width = '100%';
+        loader.hidden = true;
+        canvas.style.visibility = 'visible';
+        canvas.focus({preventScroll:true});
+        window.fetch = nativeFetch;
+        wasmPromise = null;
+      } catch(error) { fail(error); }
+    }
+    start.addEventListener('click', play);
+    canvas.addEventListener('contextmenu', event => event.preventDefault());
+    document.addEventListener('keydown', event => {
+      if (!loader.hidden) return;
+      if (['Backspace',' ','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.key)) event.preventDefault();
+    });
+  </script>
+</body>
+</html>
