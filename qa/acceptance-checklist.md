@@ -2,6 +2,8 @@
 
 Date: 2026-11-07. Scope: the new Godot web prototype, not native Android delivery or SDK integration.
 
+Historical implementation checklist, recorded before the GitHub Pages release. Hosting and browser status below are a snapshot of that earlier stage, not the current deployment status. See [pages-release.md](pages-release.md) for the verified public Pages deployment and real Chrome gameplay; that report supersedes the earlier pending browser/hosting entries.
+
 Unchecked items are **not yet verified**, not implied passes. Checked logic items below are supported by the board/controller agents' actual Godot headless tests; checked transport items use the independent Node loader harness. They are not browser or physical-phone passes. Root owns browser QA, export and publication.
 
 Recorded suites: 3,473 pure-model assertions and 513 controller/Tween assertions, zero failures (root's final rerun); independent loader test 14 cases / 260 assertions, zero failures. The cloud browser does not expose WebGL 2; an actual browser gameplay run remains unverified. The explicit compatibility notice was observed by the root agent, with no policy workaround attempted.

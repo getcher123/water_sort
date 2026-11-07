@@ -1,8 +1,8 @@
 # Публикация на GitHub Pages
 
-Репозиторий: [getcher123/water_sort](https://github.com/getcher123/water_sort). Целевой адрес игры: **[https://getcher123.github.io/water_sort/](https://getcher123.github.io/water_sort/)**.
+Репозиторий: [getcher123/water_sort](https://github.com/getcher123/water_sort). Опубликованная игра: **[https://getcher123.github.io/water_sort/](https://getcher123.github.io/water_sort/)**.
 
-Адрес становится рабочим после первоначального включения Pages и успешного развёртывания. Само наличие workflow в репозитории не подтверждает, что игра уже опубликована.
+Первая публикация и браузерное прохождение первого уровня подтверждены 7 ноября 2026 года: [отчёт](../qa/pages-release.md), [успешный запуск Actions](https://github.com/getcher123/water_sort/actions/runs/42397252718). Само наличие workflow не заменяет проверку результата каждого нового релиза.
 
 ## Первоначальная настройка
 
@@ -31,6 +31,8 @@ Workflow `.github/workflows/pages.yml`:
 Pull request запускает проверки, но не заменяет опубликованную игру. Публикация выполняется для `main` при push или ручном запуске workflow на этой ветке.
 
 `dist/`, кеш Godot и скачанный движок не хранятся в Git: они заново создаются в CI. Не требуется вручную копировать сборку в ветку `gh-pages`.
+
+Скрипт `scripts/install-godot-ci.sh` предназначен для GitHub Actions и требует `GITHUB_ENV`. Он загружает официальный движок и matching templates, проверяет SHA-256 полных архивов и устанавливает только Web-шаблоны в изолированный временный каталог. Полный архив шаблонов занимает около 1,3 GB; это загрузка на CI-runner, а не на компьютер игрока. Для локальной установки используйте [RUNNING.md](RUNNING.md).
 
 ## Доступы и безопасность
 
